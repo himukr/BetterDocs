@@ -39,6 +39,7 @@ object KodeBeagleConfig extends ConfigReader{
   // This is required to use GithubAPIHelper
   private[kodebeagle] val githubDir: String = get("kodebeagle.github.crawlDir").get
   private[kodebeagle] val sparkMaster: String = get("kodebeagle.spark.master").get
+  private[kodebeagle] val gitDiffDir: String = get("kodebeagle.github.gitDiffDir").get
   
   private[kodebeagle] val esNodes: String = get("kodebeagle.es.nodes").get
   private[kodebeagle] val esPort: String = get("kodebeagle.es.port").get

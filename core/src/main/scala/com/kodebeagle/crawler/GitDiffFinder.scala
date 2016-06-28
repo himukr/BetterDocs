@@ -21,10 +21,12 @@ import java.io._
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.routing.RoundRobinRouter
+import com.kodebeagle.configuration.KodeBeagleConfig
 import com.kodebeagle.logging.Logger
 import org.apache.commons.compress.archivers.zip.ZipFile
 import org.apache.commons.io.{FileUtils, IOUtils}
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.api.ResetCommand.ResetType
 import org.eclipse.jgit.diff.DiffEntry
 import org.eclipse.jgit.diff.DiffEntry.ChangeType
 import org.eclipse.jgit.lib.{ObjectId, ObjectReader, Repository}
@@ -33,6 +35,7 @@ import org.json4s.NoTypeHints
 import org.json4s.jackson.Serialization
 
 import scala.collection.mutable.ListBuffer
+import scala.util.{Failure, Success, Try}
 
 
 object GitRepoDiffFinder extends App with Logger {
@@ -54,7 +57,8 @@ object GitRepoDiffFinder extends App with Logger {
 
   def startFindingDiffs {
     val system = ActorSystem("GitDiffFinder")
-    val repoDirs = ListBuffer[File](new File("/home/himanshuk/kodebeagle/kodebeagle-data"))
+    val repoDirs = ListBuffer[File](
+      new File(s"${KodeBeagleConfig.githubDir}"))
     val master = system.actorOf(Props(new MasterDiffFinder(noOfWorker)), "master")
     repoDirs.foreach(x => x.listFiles().foreach(x => x.listFiles().
       foreach(x => totalGitFileCount += 1)))
@@ -111,11 +115,11 @@ class MasterDiffFinder(noOfWorker: Int) extends Actor {
         case ChangeType.DELETE =>
           deletedFiles += (entry.getOldPath)
         case ChangeType.MODIFY =>
-          modifiedFiles += entry.getOldPath + "->" + entry.getNewPath
+          modifiedFiles += entry.getNewPath
         case ChangeType.RENAME =>
           renamedFiles += entry.getOldPath + "->" + entry.getNewPath
         case ChangeType.COPY =>
-          copiedFiles += entry.getOldPath + "->" + entry.getNewPath
+          copiedFiles += entry.getNewPath
       }
     }
     (deletedFiles, modifiedFiles, renamedFiles, addedFiles, copiedFiles)
@@ -125,10 +129,12 @@ class MasterDiffFinder(noOfWorker: Int) extends Actor {
                       modifiedFiles: ListBuffer[String], renamedFiles: ListBuffer[String],
                       addedFiles: ListBuffer[String], copiedFiles: ListBuffer[String]): Unit = {
     implicit val formats = Serialization.formats(NoTypeHints)
-    val json = Serialization.write(RepoDiffInfo((fileName.split("~")) (3).toInt, fileName,
-      deletedFiles, addedFiles, modifiedFiles, renamedFiles, copiedFiles))
+    val json = Serialization.write(RepoDiffInfo((fileName.split("~")) (3).toInt,
+      fileName.replace(".zip",""), deletedFiles, addedFiles, modifiedFiles,
+      renamedFiles, copiedFiles))
     val writer = new PrintWriter(
-      new FileWriter("/home/himanshuk/kodebeagle/git-repo-diff-file.txt", true))
+      new FileWriter
+      (s"${KodeBeagleConfig.gitDiffDir}/git-repo-diff-file.txt", true))
     writer.write(json.toString + "\n")
     writer.close()
     log.info(s"diff added to git diff file : repo => $fileName")
@@ -140,36 +146,43 @@ class WorkerDiffFinder extends Actor {
   import com.kodebeagle.crawler.GitRepoDiffFinder._
 
   def unzip(file: File): Unit = {
-    val zipFile: ZipFile = new ZipFile(file)
-    try {
-      val entries = zipFile.getEntries
-      while (entries.hasMoreElements) {
-        val entry = entries.nextElement
-        val entryDestination = new File("/tmp/kodebeagle-repo/", entry.getName)
-        if (entry.isDirectory) {
-          entryDestination.mkdirs()
-        } else {
-          entryDestination.getParentFile.mkdirs
-          val in = zipFile.getInputStream(entry)
-          val out = new FileOutputStream(entryDestination)
-          IOUtils.copy(in, out)
-          IOUtils.closeQuietly(in)
-          out.close()
+
+    val mayBeZipFile = Try(new ZipFile(file))
+    if(mayBeZipFile.isSuccess){
+      val zipFile=mayBeZipFile.get
+        val zipParentPath = file.getParent
+        try {
+          val entries = zipFile.getEntries
+          while (entries.hasMoreElements) {
+            val entry = entries.nextElement
+            val entryDestination = new File(s"${zipParentPath}/${entry.getName}")
+            if (entry.isDirectory) {
+              entryDestination.mkdirs()
+            } else {
+              entryDestination.getParentFile.mkdirs
+              val in = zipFile.getInputStream(entry)
+              val out = new FileOutputStream(entryDestination)
+              IOUtils.copy(in, out)
+              IOUtils.closeQuietly(in)
+              out.close()
+            }
+          }
+        } finally {
+          zipFile.close()
         }
-      }
-    } finally {
-      zipFile.close()
+    }else{
+        log.info("Not a zip file, continue finding diff")
     }
   }
 
   private def getGitDiff(file: File) = {
     unzip(file)
-    val git = Git.open(new File(s"/tmp/kodebeagle-repo/${file.getName.replace(".zip", "")}"))
-    git.fetch.call
+    val git = Git.open(new File(s"${file.getPath.replace(".zip","")}"))
+    git.fetch().call
     val repo: Repository = git.getRepository
-    val fetchHead = repo.resolve("refs/heads/" + file.getName.split("~")(6)
-      + "^{tree}")
-    val head: ObjectId = repo.resolve("refs/remotes/origin/" + file.getName.split("~")(6) +
+    val fetchHead = repo.resolve("refs/remotes/origin/" + file.getName.split("~")(6)
+      + "^{tree}" )
+    val head: ObjectId = repo.resolve("refs/heads/" + file.getName.split("~")(6) +
       "^{tree}")
     val reader: ObjectReader = repo.newObjectReader
     val oldTreeIter: CanonicalTreeParser = new CanonicalTreeParser
@@ -181,14 +194,15 @@ class WorkerDiffFinder extends Actor {
 
   import scala.collection.JavaConversions._
 
-  private def saveAddedAndModifiedFiles(diffEntries: List[DiffEntry], fromFile: File) = {
+  private def getLatestRevision(diffEntries: List[DiffEntry], fromFile: File) = {
     val git = Git.open(fromFile)
-    val toFileDir = "/home/himanshuk/kodebeagle/git-diff-data"
+    val toFileDir = s"${KodeBeagleConfig.gitDiffDir}/kodebeagle-git-diff-data/git-diff-data"
     for (entry <- diffEntries) {
-      if (entry.getChangeType == ChangeType.ADD || entry.getChangeType == ChangeType.MODIFY) {
-        git.checkout().setName(fromFile.getName.split("~")(6)).addPath(entry.getNewPath).call()
-        FileUtils.copyFile(new File(s"$fromFile/${entry.getNewPath}"),
-          new File(s"$toFileDir/${fromFile.getName}/${entry.getNewPath}"))
+      if (entry.getChangeType == ChangeType.ADD || entry.getChangeType == ChangeType.MODIFY
+        || entry.getChangeType == ChangeType.RENAME || entry.getChangeType == ChangeType.COPY) {
+//        git.checkout().setName(fromFile.getName.split("~")(6)).addPath(entry.getNewPath).call()
+        git.reset().setMode(ResetType.HARD).setRef("refs/remotes/origin/" +
+          fromFile.getName.split("~")(6)).call()
       }
     }
   }
@@ -203,13 +217,13 @@ class WorkerDiffFinder extends Actor {
           Nil
       }
       sender() ! GitDiffResult(diffEntries, file.getName)
-      val toBeDeleted = new File(s"/tmp/kodebeagle-repo/${file.getName.replace(".zip", "")}")
-      if (toBeDeleted.exists()) {
+      val unzipedFile = new File(s"${file.getPath.replace(".zip","")}")
+      if (unzipedFile.exists()) {
         if (diffEntries != Nil && diffEntries.size > 0) {
-          saveAddedAndModifiedFiles(diffEntries, toBeDeleted)
+          getLatestRevision(diffEntries, unzipedFile)
         }
-        FileUtils.deleteDirectory(toBeDeleted)
       }
+      FileUtils.forceDelete(file)
       log.info(s"worker completed the task: repo => ${file.getName}")
   }
 }
