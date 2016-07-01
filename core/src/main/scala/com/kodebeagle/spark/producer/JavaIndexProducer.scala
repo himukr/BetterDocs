@@ -47,6 +47,6 @@ object JavaIndexProducer extends IndexProducer {
           toIndexTypeJson(TYPEREFS, "javaexternal", external, isToken = false),
           toJson(metadata, isToken = false),
           toJson(sourceFile, isToken = false))
-    }.saveAsTextFile(s"${KodeBeagleConfig.sparkIndexOutput}${batch}javaIndex")
+    }.saveAsTextFile(s"${KodeBeagleConfig.sparkIndexOutput}/${batch}/javaIndex")
   }
 }

@@ -49,27 +49,26 @@ object GitRepoDiffFinder extends App with Logger {
 
   case class GitDiffResult(diffEntries: List[DiffEntry], fileName: String) extends Message
 
-  case class RepoDiffInfo(repoId: Int, repoFileName: String, deleteFiles: ListBuffer[String],
+  case class RepoDiffInfo(repoFileName: String, deleteFiles: ListBuffer[String],
                           addedFiles: ListBuffer[String], modifiedFiles: ListBuffer[String],
                           renamedFiles: ListBuffer[String], copiedFiles: ListBuffer[String])
 
   var totalGitFileCount = 0
 
-  def startFindingDiffs {
+  def startFindingDiffs(batch: String) {
     val system = ActorSystem("GitDiffFinder")
-    val repoDirs = ListBuffer[File](
-      new File(s"${KodeBeagleConfig.githubDir}"))
-    val master = system.actorOf(Props(new MasterDiffFinder(noOfWorker)), "master")
-    repoDirs.foreach(x => x.listFiles().foreach(x => x.listFiles().
-      foreach(x => totalGitFileCount += 1)))
+    val repoBatchDir = new File(s"${KodeBeagleConfig.githubDir}/$batch")
+    val master = system.actorOf(Props(new MasterDiffFinder(noOfWorker,batch)), "master")
+    repoBatchDir.listFiles().
+      foreach(x => totalGitFileCount += 1)
     log.info(s"Started processing $totalGitFileCount files")
-    repoDirs.foreach(x => master ! GitDiff(x))
+    master ! GitDiff(repoBatchDir)
   }
 
-  startFindingDiffs
+  startFindingDiffs(args(0))
 }
 
-class MasterDiffFinder(noOfWorker: Int) extends Actor {
+class MasterDiffFinder(noOfWorker: Int,batch: String) extends Actor {
 
   import com.kodebeagle.crawler.GitRepoDiffFinder._
 
@@ -78,10 +77,10 @@ class MasterDiffFinder(noOfWorker: Int) extends Actor {
 
   override def receive: Receive = {
     case GitDiff(gitRepoDir) =>
-      gitRepoDir.listFiles().foreach(x => x.listFiles().foreach(x => {
+      gitRepoDir.listFiles().foreach(x => {
         log.info(s"sending task to worker: repo => ${x.getName}");
         workerRouter ! Diff(x)
-      }))
+      })
 
     case GitDiffResult(diffEntries, fileName) =>
       if (diffEntries != Nil && diffEntries.size > 0) {
@@ -129,12 +128,11 @@ class MasterDiffFinder(noOfWorker: Int) extends Actor {
                       modifiedFiles: ListBuffer[String], renamedFiles: ListBuffer[String],
                       addedFiles: ListBuffer[String], copiedFiles: ListBuffer[String]): Unit = {
     implicit val formats = Serialization.formats(NoTypeHints)
-    val json = Serialization.write(RepoDiffInfo((fileName.split("~")) (3).toInt,
-      fileName.replace(".zip",""), deletedFiles, addedFiles, modifiedFiles,
-      renamedFiles, copiedFiles))
+    val json = Serialization.write(RepoDiffInfo(fileName.replace(".zip",""),
+      deletedFiles, addedFiles, modifiedFiles, renamedFiles, copiedFiles))
     val writer = new PrintWriter(
       new FileWriter
-      (s"${KodeBeagleConfig.gitDiffDir}/git-repo-diff-file.txt", true))
+      (s"${KodeBeagleConfig.gitDiffDir}/git-repo-diff-file-$batch.txt", true))
     writer.write(json.toString + "\n")
     writer.close()
     log.info(s"diff added to git diff file : repo => $fileName")
@@ -196,11 +194,9 @@ class WorkerDiffFinder extends Actor {
 
   private def getLatestRevision(diffEntries: List[DiffEntry], fromFile: File) = {
     val git = Git.open(fromFile)
-    val toFileDir = s"${KodeBeagleConfig.gitDiffDir}/kodebeagle-git-diff-data/git-diff-data"
     for (entry <- diffEntries) {
       if (entry.getChangeType == ChangeType.ADD || entry.getChangeType == ChangeType.MODIFY
         || entry.getChangeType == ChangeType.RENAME || entry.getChangeType == ChangeType.COPY) {
-//        git.checkout().setName(fromFile.getName.split("~")(6)).addPath(entry.getNewPath).call()
         git.reset().setMode(ResetType.HARD).setRef("refs/remotes/origin/" +
           fromFile.getName.split("~")(6)).call()
       }

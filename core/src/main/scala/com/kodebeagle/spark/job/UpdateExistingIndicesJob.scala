@@ -17,14 +17,14 @@
 
 package com.kodebeagle.spark.job
 
-import java.io.PrintWriter
+import java.io.{File, PrintWriter}
 
 import com.kodebeagle.configuration.KodeBeagleConfig
 import com.kodebeagle.logging.Logger
 import com.kodebeagle.spark.producer.{JavaIndexProducer, ScalaIndexProducer}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.Map
 
@@ -44,7 +44,7 @@ object UpdateExistingIndicesJob extends Logger {
     val batch = args(0)
 
     val diffMap: Broadcast[Map[String, (List[String], List[String])]] = sc.broadcast(sc.textFile(
-      s"${KodeBeagleConfig.gitDiffDir}/git-repo-diff-file.txt").
+      s"${KodeBeagleConfig.gitDiffDir}/git-repo-diff-file-$batch.txt").
       map(x => {
         val (repoName: JValue, addedFiles: JValue, deleteFiles: JValue, modifiedFiles: JValue,
         renamedFiles: JValue, copiedFiles: JValue, renamedFilesForAdd: List[Nothing],
@@ -62,38 +62,21 @@ object UpdateExistingIndicesJob extends Logger {
       }).map { case (x, y) => (x, (y._1 ++ y._2 ++ y._4 ++ y._5, y._3 ++ y._6)) }.collectAsMap()
     )
 
-    val rdd: RDD[(String, (String, String))] = makeRDD(sc, batch)
-
-    val addIndexRdd = makeAddIndexRDD(rdd, diffMap)
-
-    val repoIndex = sc.broadcast(createRepoIndex(addIndexRdd, batch))
-    val (javaRDD, scalaRDD) = (addIndexRdd.filter { case (_, file) => file._1.endsWith(".java") },
-      addIndexRdd.filter { case (_, file) => file._1.endsWith(".scala") })
-    JavaIndexProducer.createIndices(javaRDD, batch, repoIndex.value)
-    ScalaIndexProducer.createIndices(scalaRDD, batch, repoIndex.value)
+//    val addIndexRdd: RDD[(String, (String, String))] = makeRDD(sc, batch, diffMap)
+//
+//    val repoIndex = sc.broadcast(createRepoIndex(addIndexRdd, batch))
+//    val (javaRDD, scalaRDD) = (addIndexRdd.filter { case (_, file) => file._1.endsWith(".java") },
+//      addIndexRdd.filter { case (_, file) => file._1.endsWith(".scala") })
+//    JavaIndexProducer.createIndices(javaRDD, batch, repoIndex.value)
+//    ScalaIndexProducer.createIndices(scalaRDD, batch, repoIndex.value)
 
     deleteIndices(diffMap.value, batch)
 
   }
 
-  def makeAddIndexRDD(rdd: RDD[(String, (String, String))], diffMap:
-  Broadcast[Map[String, (List[String], List[String])]]): RDD[(String, (String, String))] = {
-    rdd.filter { case (x, y) => {
-      val file = diffMap.value.get(x + ".zip")
-      if (file != None) {
-        file.get._1.contains(y._1.substring(y._1.indexOf("/") + 1))
-      }
-      else {
-        false
-      }
-    }
-    }.cache()
-  }
-
   def extractChanges(x: String): (JValue, JValue, JValue, JValue,
     JValue, JValue, List[Nothing], List[Nothing]) = {
     val repoDiff = parse(x)
-    val repoId = repoDiff \ "repoId"
     val repoName = repoDiff \ "repoFileName"
     val addedFiles = repoDiff \ "addedFiles"
     val deleteFiles = repoDiff \ "deleteFiles"
@@ -108,8 +91,47 @@ object UpdateExistingIndicesJob extends Logger {
 
   private def deleteIndices(diffMapValue: Map[String, (List[String], List[String])],
                             batch: String) {
-    new PrintWriter(s"${KodeBeagleConfig.sparkIndexOutput}${batch}deleteIndexFiles") {
-      write(diffMapValue.flatMap(_._2._2).mkString("\n")); close
+    case class RepoId(repoId: String)
+    case class FileName(file: String)
+    case class ShouldMatch(match_phrase: FileName)
+    case class MustMatch(term: RepoId)
+
+    new File(s"${KodeBeagleConfig.sparkIndexOutput}/$batch").mkdirs()
+    new PrintWriter(s"${KodeBeagleConfig.sparkIndexOutput}/${batch}/deleteIndexFiles") {
+      write(diffMapValue.filter { case (x, y) => y._2.size > 0 }
+        .map { case (repoName, y) => (MustMatch(RepoId(extractRepoId(repoName))),
+          y._2.map(deletedFile => ShouldMatch(FileName(deletedFile))))
+        }
+        .map(x => toDeleteIndexTypeJson(x._1, x._2)).mkString("\n")
+      )
+      close()
     }
   }
+
+  def makeRDD(sc: SparkContext, batch: String, diffMap:
+  Broadcast[Map[String, (List[String], List[String])]]): RDD[(String, (String, String))] = {
+    val inputDir = s"${KodeBeagleConfig.githubDir}/$batch/"
+    val rdd = sc.wholeTextFiles(s"$inputDir*")
+      .map { case (fName, fContent) =>
+        val cleanedFName = fName.stripPrefix("file:").stripPrefix("hdfs:").stripPrefix(inputDir)
+        (cleanedFName, fContent)
+      }
+      .map { case (fName, fContent) => (extractRepoDirName(fName), (fName, fContent)) }
+      .filter { case (x, y) => {
+        val file = diffMap.value.get(x)
+        if (file != None) {
+          file.get._1.contains(y._1.substring(y._1.indexOf("/") + 1))
+        }
+        else {
+          false
+        }
+      }
+      }.cache()
+    rdd
+  }
+
+  private def extractRepoDirName(x: String) = x.substring(0, x.indexOf('/'))
+
+  private def extractRepoId(repoName: String) = repoName.split("~")(3)
+
 }

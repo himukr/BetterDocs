@@ -23,6 +23,7 @@ import com.kodebeagle.parser.RepoFileNameParser
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}
+import org.json4s.jackson.Serialization._
 
 import scala.io.Source
 import scala.util.Try
@@ -99,7 +100,7 @@ object SparkIndexJobHelper {
       }.cache()
     aggregateRDD.map(_._2._1.getOrElse(Repository.invalid)).filter(x => x != Repository.invalid)
       .flatMap(repo => Seq(toJson(repo, isToken = false)))
-      .saveAsTextFile(KodeBeagleConfig.sparkIndexOutput + batch + "repoIndex")
+      .saveAsTextFile(s"${KodeBeagleConfig.sparkIndexOutput}/$batch/repoIndex")
     aggregateRDD.collectAsMap().toMap
   }
 
@@ -160,4 +161,21 @@ object SparkIndexJobHelper {
     } else "" + write(t)
 
   }
+
+  def toDeleteIndexTypeJson
+  [T <: AnyRef <% Product with Serializable](mustMatch: T,shouldMatches: List[T]): String={
+    import org.json4s._
+    import org.json4s.jackson.Serialization
+    import org.json4s.jackson.Serialization.write
+    implicit val formats = Serialization.formats(NoTypeHints)
+
+    val query=
+      """{  "query":{"bool":{"must":""" +
+            write(mustMatch) +
+          ""","should": """ +
+            write(shouldMatches) +
+          ""","minimum_should_match": 1}}}"""
+    query
+  }
+
 }

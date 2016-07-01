@@ -44,6 +44,6 @@ object ScalaIndexProducer extends IndexProducer {
         Seq(toIndexTypeJson(TYPEREFS, "scalainternal", internal, isToken = false),
           toIndexTypeJson(TYPEREFS, "scalaexternal", external, isToken = false),
           toJson(sourceFile, isToken = false))
-    }.saveAsTextFile(s"${KodeBeagleConfig.sparkIndexOutput}${batch}scalaIndex")
+    }.saveAsTextFile(s"${KodeBeagleConfig.sparkIndexOutput}/${batch}/scalaIndex")
   }
 }
