@@ -219,7 +219,7 @@ class WorkerDiffFinder extends Actor {
           getLatestRevision(diffEntries, unzipedFile)
         }
       }
-      FileUtils.forceDelete(file)
+      // FileUtils.forceDelete(file)
       log.info(s"worker completed the task: repo => ${file.getName}")
   }
 }
