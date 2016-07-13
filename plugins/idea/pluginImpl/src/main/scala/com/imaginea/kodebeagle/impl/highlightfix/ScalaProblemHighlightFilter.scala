@@ -40,7 +40,7 @@ class ScalaProblemHighlightFilter extends ProblemHighlightFilter {
       /* Versions Of Intellij prior to build 143 don't have the class
        ScratchFileType and method getFileType on FileViewProvider  */
       if (ApplicationInfo.getInstance().getBuild.getBuildNumber >= BUILD) {
-        result || (file.getViewProvider.getFileType == ScratchFileType.INSTANCE)
+        result || (file.getFileType == ScratchFileType.INSTANCE)
       } else {
         result
       }

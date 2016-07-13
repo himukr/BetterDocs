@@ -20,18 +20,22 @@
 # DISCLAIMER: There are no defensive checks please use it carefully.
 
 echo "Clearing kodebeagle related indices from elasticsearch."
-curl -XDELETE 'http://localhost:9201/kodebeagle/'
-curl -XDELETE 'http://localhost:9201/sourcefile/'
-curl -XDELETE 'http://localhost:9201/repository/'
-curl -XDELETE 'http://localhost:9201/importsmethods/'
-curl -XDELETE 'http://localhost:9201/statistics/'
+curl -XDELETE 'http://localhost:9200/kodebeagle/'
+curl -XDELETE 'http://localhost:9200/sourcefile/'
+curl -XDELETE 'http://localhost:9200/repository/'
+curl -XDELETE 'http://localhost:9200/importsmethods/'
+curl -XDELETE 'http://localhost:9200/statistics/'
+curl -XDELETE 'http://localhost:9200/typereferences'
+curl -XDELETE 'http://localhost:9200/filemetadata'
+curl -XDELETE 'http://localhost:9200/repotopic'
+
 
 # create a kodebeagle index
-curl -XPUT 'http://localhost:9201/kodebeagle/'
+curl -XPUT 'http://localhost:9200/kodebeagle/'
 
 # Updating mappings and types for kodebeagle index.
 
-curl -XPUT 'localhost:9201/kodebeagle/custom/_mapping' -d '
+curl -XPUT 'localhost:9200/kodebeagle/custom/_mapping' -d '
 {
     "custom" : {
         "properties" : {
@@ -59,7 +63,7 @@ curl -XPUT 'localhost:9201/kodebeagle/custom/_mapping' -d '
     }
 }'
 
-curl -XPUT 'localhost:9201/sourcefile' -d '{
+curl -XPUT 'localhost:9200/sourcefile' -d '{
  "mappings": {
     "typesourcefile" : {
         "properties" : {
@@ -71,7 +75,7 @@ curl -XPUT 'localhost:9201/sourcefile' -d '{
     }
 }'
 
-curl -XPUT 'localhost:9201/repotopic' -d '{
+curl -XPUT 'localhost:9200/repotopic' -d '{
     "mappings" : {
       "typerepotopic" : {
         "properties" : {
@@ -93,14 +97,14 @@ curl -XPUT 'localhost:9201/repotopic' -d '{
           "name" : {
             "type" : "string"
           },
-	  "files":   { 
+	  "files":   {
               "type":       "object",
               "properties": {
                 "file":     { "type": "string" },
                 "klscore":    { "type": "double" }
               }
           },
-	  "topic":   { 
+	  "topic":   {
               "type":         "object",
               "properties": {
                 "term":     { "type": "string" },
@@ -113,7 +117,7 @@ curl -XPUT 'localhost:9201/repotopic' -d '{
   }'
 
 
-curl -XPUT 'http://localhost:9201/importsmethods/' -d '{
+curl -XPUT 'http://localhost:9200/importsmethods/' -d '{
     "mappings": {
         "typeimportsmethods": {
             "properties": {
@@ -187,9 +191,79 @@ curl -XPUT 'http://localhost:9201/importsmethods/' -d '{
     }
 }'
 
+curl -XPUT 'http://localhost:9200/typereferences/' -d '{
+    "mappings": {
+        "javaexternal": {
+            "properties": {
+                "file": {
+                    "type": "string",
+                    "index": "no"
+                },
+                "types": {
+                    "type": "nested",
+                    "include_in_parent": true,
+                    "properties": {
+                        "typeName": {
+                            "type": "string",
+                            "index": "not_analyzed"
+                        },
+                        "lines": {
+                            "properties": {
+                                "endColumn": {
+                                    "type": "long"
+                                },
+                                "lineNumber": {
+                                    "type": "long"
+                                },
+                                "startColumn": {
+                                    "type": "long"
+                                }
+                            }
+                        },
+                        "properties": {
+                            "type": "nested",
+                            "include_in_parent": true,
+                            "properties": {
+                                "lines": {
+                                    "properties": {
+                                        "endColumn": {
+                                            "type": "long"
+                                        },
+                                        "lineNumber": {
+                                            "type": "long"
+                                        },
+                                        "startColumn": {
+                                            "type": "long"
+                                        }
+                                    }
+                                },
+                                "propertyName": {
+                                    "type": "string",
+                                    "index": "not_analyzed"
+                                }
+                            }
+                        }
+                    }
+                },
+                "repoId": {
+                    "type": "long"
+                },
+                "language": {
+                    "type": "string",
+                    "index": "not_analyzed"
+                },
+                "score": {
+                    "type": "integer",
+                    "index": "not_analyzed"
+                }
+            }
+        }
+    }
+}'
+
 
 for f in `find $1 -name 'part*'`
 do
     echo "uploading $f to elasticsearch."
-    curl -s -XPOST 'localhost:9201/_bulk' --data-binary '@'$f >/dev/null
+    curl -s -XPOST 'localhost:9200/_bulk' --data-binary '@'$f >/dev/null
 done

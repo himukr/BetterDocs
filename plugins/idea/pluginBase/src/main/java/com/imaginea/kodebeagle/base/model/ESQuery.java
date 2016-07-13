@@ -202,15 +202,15 @@ public class ESQuery {
     }
 
     public static class Term {
-        private String importName;
+        private String typeName;
         private String language;
 
         public final void setImportName(final String pImportName) {
-            this.importName = pImportName;
+            this.typeName = pImportName;
         }
 
         public final String getImportName() {
-            return importName;
+            return typeName;
         }
 
         public final String getLanguage() {
@@ -223,14 +223,14 @@ public class ESQuery {
     }
 
     public static class Terms {
-        private List<String> methodName;
+        private List<String> propertyName;
 
         public final List<String> getMethodName() {
-            return methodName;
+            return propertyName;
         }
 
         public final void setMethodName(final List<String> pMethodName) {
-            this.methodName = pMethodName;
+            this.propertyName = pMethodName;
         }
     }
 

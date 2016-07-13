@@ -69,8 +69,8 @@ public class QueryKBServerTask extends Task.Backgroundable {
     private static final double CONVERT_TO_SECONDS = 1000000000.0;
     private static final String RESULT_NOTIFICATION_FORMAT =
             "<br/> Showing %d of %d results (%.2f seconds)";
-    private static final String JAVA_SEARCH = "/importsmethods/typeimportsmethods/_search?source=";
-    private static final String SCALA_SEARCH = "/importsmethods/typescala/_search?source=";
+    private static final String JAVA_SEARCH = "/typereferences/javaexternal/_search?source=";
+    private static final String SCALA_SEARCH = "/typereferences/scalaexternal/_search?source=";
     public static final int MIN_IMPORT_SIZE = 3;
     private final Map<String, Set<String>> finalImports;
     private final JTree jTree;

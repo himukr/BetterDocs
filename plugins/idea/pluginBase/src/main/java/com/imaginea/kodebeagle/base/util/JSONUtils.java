@@ -33,17 +33,17 @@ import java.util.Map;
 import java.util.Set;
 
 public class JSONUtils {
-    private static final String TOKENS_IMPORT_NAME = "tokens.importName";
-    private static final String IMPORT_NAME = "importName";
-    private static final String TOKENS = "tokens";
-    private static final String TOKENS_METHOD_NAME = "tokens.methodAndLineNumbers.methodName";
-    private static final String METHOD_NAME = "methodName";
-    private static final String IMPORT_EXACT_NAME = "importExactName";
-    private static final String LINE_NUMBERS = "lineNumbers";
+    private static final String TOKENS_IMPORT_NAME = "types.typeName";
+    private static final String IMPORT_NAME = "typeName";
+    private static final String TOKENS = "types";
+    private static final String TOKENS_METHOD_NAME = "types.properties.propertyName";
+    private static final String METHOD_NAME = "propertyName";
+    private static final String IMPORT_EXACT_NAME = "typeName";
+    private static final String LINE_NUMBERS = "lines";
     private static final String CACHE = "cache";
     private static final String FILTER_CACHE = "_cache";
     private static final String SORT_ORDER = "desc";
-    private static final String TYPESOURCEFILENAME_FILENAME = "typesourcefile.fileName";
+    private static final String TYPESOURCEFILENAME_FILENAME = "fileName";
     private static final String FILE_NAME = "fileName";
     private static final String LINE_NUMBER = "lineNumber";
 
@@ -127,7 +127,7 @@ public class JSONUtils {
 
     private ESQuery.Term getImportTerm(final String importName) {
         ESQuery.Term term = new ESQuery.Term();
-        term.setImportName(importName.toLowerCase());
+        term.setImportName(importName);
         return term;
     }
 

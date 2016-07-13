@@ -37,15 +37,15 @@ class ESQueryJsonSuite extends FunSuite with BeforeAndAfterAll {
     val actualJSON = new JSONUtils().getESQueryJson(importVsMethods.asJava, size,
       includeMethods)
     val expectedJSON: String =
-      """{"query":{"filtered":{"filter":{"and":[{"nested":{"path":"tokens","filter":{"bool":
-        |{"must":[{"term":{"tokens.importName":"java.util.list"}}],"should":[{"terms":
-        |{"tokens.methodAndLineNumbers.methodName":["add"]}}]}}}},{"nested":{"path":
-        |"tokens","filter":{"bool":{"must":[{"term":{"tokens.importName":
-        |"java.util.hashmap"}}],"should":[{"terms":{"tokens.methodAndLineNumbers.
-        |methodName":["put"]}}]}}}}]},"_cache":true}},"from":0,"size":30,"sort":
+      """{"query":{"filtered":{"filter":{"and":[{"nested":{"path":"types","filter":{"bool":
+        |{"must":[{"term":{"types.typeName":"java.util.List"}}],"should":[{"terms":
+        |{"types.properties.propertyName":["add"]}}]}}}},{"nested":{"path":
+        |"types","filter":{"bool":{"must":[{"term":{"types.typeName":
+        |"java.util.HashMap"}}],"should":[{"terms":{"types.properties.
+        |propertyName":["put"]}}]}}}}]},"_cache":true}},"from":0,"size":30,"sort":
         |[{"score":{"order":"desc"}}]}""".stripMargin.replaceAll("\n", "").replaceAll("\r\n", "")
 
-    assert(actualJSON == expectedJSON)
+    assert(actualJSON.equals(expectedJSON))
   }
 
   test("Tesing EsQueryJson for Scala imports") {
@@ -56,11 +56,11 @@ class ESQueryJsonSuite extends FunSuite with BeforeAndAfterAll {
     val actualJSON = new JSONUtils().getESQueryJson(importsVsMethods.asJava, size,
       includeMethods)
     val expectedJSON =
-      """{"query":{"filtered":{"filter":{"and":[{"term":{"tokens.importName":"akka.actor.actorref"
-        |}},{"term":{"tokens.importName":"akka.actor.props"}}]},"_cache":true}},"from":0,"size":30,
+      """{"query":{"filtered":{"filter":{"and":[{"term":{"types.typeName":"akka.actor.actorref"
+        |}},{"term":{"types.typeName":"akka.actor.props"}}]},"_cache":true}},"from":0,"size":30,
         |"sort":[{"score":{"order":"desc"}}]}""".stripMargin.replaceAll("\n", "")
         .replaceAll("\r\n", "")
-    assert(actualJSON == expectedJSON)
+    assert(actualJSON.equals(expectedJSON))
   }
 
   test("Testing EsQueryJson for Java imports only") {
@@ -69,14 +69,14 @@ class ESQueryJsonSuite extends FunSuite with BeforeAndAfterAll {
       "java.util.HashMap" -> emptyMethods.asJava)
     val size = 30
     val includeMethods = false
-    val actualJSON = new JSONUtils().getESQueryJson(importVsMethods.asJava, size,
+    val actualJSON: String = new JSONUtils().getESQueryJson(importVsMethods.asJava, size,
       includeMethods)
     val expectedJSON: String =
-      """{"query":{"filtered":{"filter":{"and":[{"term":{"tokens.importName":"java.util.list"}}
-        |,{"term":{"tokens.importName":"java.util.hashmap"}}]},"_cache":true}},"from":0,"size":30,
+      """{"query":{"filtered":{"filter":{"and":[{"term":{"types.typeName":"java.util.List"}}
+        |,{"term":{"types.typeName":"java.util.HashMap"}}]},"_cache":true}},"from":0,"size":30,
         |"sort":[{"score":{"order":"desc"}}]}""".stripMargin.replaceAll("\n", "")
         .replaceAll("\r\n", "")
-    assert(actualJSON == expectedJSON)
+    assert(actualJSON.equals(expectedJSON))
   }
 
   private val fileName = "apache/ofbiz/blob/trunk/framework/" +
@@ -87,6 +87,6 @@ class ESQueryJsonSuite extends FunSuite with BeforeAndAfterAll {
     val actualFileContentJSON = "{\"query\":{\"term\":{\"fileName\":\"" +
       "apache/ofbiz/blob/trunk/framework/entity/src/org/ofbiz/entity/model/ModelEntity.java\"}}}"
 
-    assert(expectedFileContentJSON == actualFileContentJSON)
+    assert(expectedFileContentJSON.equals(actualFileContentJSON))
   }
 }

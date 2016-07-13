@@ -46,8 +46,8 @@ public class ESUtils {
     private static final String TOTAL_COUNT = "total";
     private static final String SOURCE = "_source";
     private static final String FILE = "file";
-    private static final String TOKENS = "tokens";
-    private static final String SOURCEFILE_SEARCH = "/sourcefile/_search?source=";
+    private static final String TOKENS = "types";
+    private static final String SOURCEFILE_SEARCH = "/sourcefile/typesourcefile/_search?source=";
     private static final String FAILED_HTTP_ERROR = "Connection Error: ";
     private static final String USER_AGENT = "USER-AGENT";
     private static final int HTTP_OK_STATUS = 200;
