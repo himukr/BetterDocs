@@ -160,6 +160,10 @@ object SparkIndexJobHelper {
     "" + write(t)
   }
 
+  def toDeleteIndexJson(id: String): String = {
+    s"""{ "delete": {"_id":"""" + id + """" }}"""
+  }
+
   class LineSerializer extends CustomSerializer[Line](format => ({
     case JArray(List(JInt(line), JInt(startCol), JInt(endCol))) =>
       Line(line.toInt, startCol.toInt, endCol.toInt)

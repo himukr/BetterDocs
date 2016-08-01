@@ -22,6 +22,9 @@ import com.kodebeagle.configuration.KodeBeagleConfig
 import com.kodebeagle.logging.Logger
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
+import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.lib.{ObjectId, ObjectReader, Repository}
+import org.eclipse.jgit.treewalk.CanonicalTreeParser
 
 import scala.collection.mutable.ListBuffer
 import scala.sys.process.ProcessLogger
@@ -36,17 +39,23 @@ class GithubRepoUpdateHelper(val configuration: Configuration,
   // TODO: Get these from configuration?
   val remoteUrlPrefix = "https://github.com/"
   val gitDBName = "git.tar.gz"
-  val fsRepoDirPath = "/kodebeagle/repos/"
 
   def fs: FileSystem = FileSystem.get(configuration)
 
   def localCloneDir: String = KodeBeagleConfig.repoCloneDir
 
-  def fsRepoPath: Path = new Path(join("", fsRepoDirPath, repoPath))
+  def fsStoreDir: String = KodeBeagleConfig.repoStoreDir
+
+  def fsRepoPath: Path = new Path(join(File.separator, fsStoreDir, repoPath))
 
   def localRepoPath: String = join(File.separator, localCloneDir, repoPath)
 
   def localGitPath: String = join(File.separator, localRepoPath, gitDBName)
+
+
+  def shouldCreate(): Boolean = {
+    !fs.exists(fsRepoPath)
+  }
 
   /**
     * Checks if the repository exists on fs, if not then return true.
@@ -57,24 +66,56 @@ class GithubRepoUpdateHelper(val configuration: Configuration,
     * @return - whether to update (reclone) this repository from Guthub
     */
   def shouldUpdate(): Boolean = {
-    val exists = fs.exists(fsRepoPath)
     var shouldUpdate = false
-    if (exists) {
-      log.info(s"Repo exists at ${fsRepoPath.toString}")
-      val filestatus = fs.getFileStatus(new Path(join(File.separator,
-        fsRepoPath.toString, gitDBName)))
-      val elapsedTime = System.currentTimeMillis - filestatus.getModificationTime
-      if (elapsedTime / (1000 * 60 * 60 * 24) > KodeBeagleConfig.repoUpdateFreqDays) {
-        log.info(s"Repo exists at ${fsRepoPath.toString} but out of date; will clone")
-        shouldUpdate = true
-      } else {
-        log.info(s"Repo up-t-date at ${fsRepoPath.toString}; will NOT clone")
-      }
+
+    log.info(s"Repo exists at ${fsRepoPath.toString}")
+    fs.setTimes(fsRepoPath,199,88)
+    val filestatus = fs.getFileStatus(new Path(join(File.separator,
+      fsRepoPath.toString, gitDBName)))
+    val elapsedTime = System.currentTimeMillis - filestatus.getModificationTime
+    if (elapsedTime / (1000 * 60 * 60 * 24) > KodeBeagleConfig.repoUpdateFreqDays) {
+      log.info(s"Repo exists at ${fsRepoPath.toString} but out of date;" +
+        s" will check if there are changes in remote file")
+      shouldUpdate = gitDiffExist
     } else {
-      log.info(s"Repo does not exists at ${fsRepoPath.toString}; will clone")
-      shouldUpdate = true
+      log.info(s"Repo up-to-date at ${fsRepoPath.toString}; will NOT clone")
     }
     shouldUpdate
+  }
+
+  /**
+    * performs the git fetch action on git repo.
+    *
+    * This method is kept separate so that it can be mocked in Unit test cases
+    * @param git
+    */
+  protected def performGitFetch(git: Git): Unit = {
+    git.fetch().call
+  }
+
+  protected def performGitMerge(repo: Repository,git: Git): Unit ={
+    git.merge().include(repo.getRef(s"refs/remotes/origin/${repo.getBranch}")).call()
+  }
+
+  def gitDiffExist(): Boolean ={
+    val repoPath = downloadLocalFromDfs()(0)
+
+    val git = Git.open(new File(s"$repoPath/.git"))
+    performGitFetch(git)
+    val repo: Repository = git.getRepository
+    val fetchHead = repo.resolve(s"refs/remotes/origin/${repo.getBranch}^{tree}")
+    val head: ObjectId = repo.resolve(s"refs/heads/${repo.getBranch}^{tree}")
+    val reader: ObjectReader = repo.newObjectReader
+    val oldTreeIter: CanonicalTreeParser = new CanonicalTreeParser
+    oldTreeIter.reset(reader, head)
+    val newTreeIter: CanonicalTreeParser = new CanonicalTreeParser
+    newTreeIter.reset(reader, fetchHead)
+    val diffs=git.diff.setNewTree(newTreeIter).setOldTree(oldTreeIter).call()
+    if(diffs.size()>0) {
+      performGitMerge(repo,git)
+    }
+    log.info(s"No of changes in $repoPath : ${diffs.size}")
+    diffs.size > 0
   }
 
   /**
@@ -85,7 +126,7 @@ class GithubRepoUpdateHelper(val configuration: Configuration,
     *
     * @return - true if the repo was updated successfully
     */
-  def update(): Boolean = {
+  def create(): Boolean = {
     val cloneUrl = remoteUrlPrefix + repoPath
     val repoName = repoPath.split("/")(1)
 
@@ -116,6 +157,23 @@ class GithubRepoUpdateHelper(val configuration: Configuration,
     tarGitCmd.!!
 
     val pathsToCopy = Array(new Path(s"""${localRepoPath}/git.tar.gz"""))
+
+    fs.mkdirs(fsRepoPath)
+    fs.copyFromLocalFile(true, true, pathsToCopy, fsRepoPath)
+
+    true
+  }
+
+  def update(): Boolean ={
+    log.info(s"updating existing repo: $repoPath")
+    val repoName = repoPath.split("/")(1)
+    val tarGitCmd = bashCmdsFromDir(localRepoPath,
+      Seq(
+        s"""cd ${localRepoPath}/$repoName""",
+        s"""tar -zcf git.tar.gz .git/"""))
+    tarGitCmd.!!
+
+    val pathsToCopy = Array(new Path(s"""${localRepoPath}/$repoName/git.tar.gz"""))
 
     fs.mkdirs(fsRepoPath)
     fs.copyFromLocalFile(true, true, pathsToCopy, fsRepoPath)

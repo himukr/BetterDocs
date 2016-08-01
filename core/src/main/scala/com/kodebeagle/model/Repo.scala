@@ -68,3 +68,8 @@ trait LazyLoadSupport {
     }
   }
 }
+
+object RepoIndexStatus extends Enumeration{
+  type RepoIndexStatus=Value
+  val NEW, EXISTING =Value
+}

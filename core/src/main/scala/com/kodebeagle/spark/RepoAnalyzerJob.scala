@@ -23,7 +23,7 @@ import com.kodebeagle.configuration.KodeBeagleConfig
 import com.kodebeagle.indexer.SourceFile
 import com.kodebeagle.logging.Logger
 import com.kodebeagle.model.GithubRepo.GithubRepoInfo
-import com.kodebeagle.model.{GithubRepo, JavaRepo}
+import com.kodebeagle.model.{GithubRepo, JavaRepo, RepoIndexStatus}
 import com.kodebeagle.util.SparkIndexJobHelper._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -122,18 +122,16 @@ object RepoAnalyzerJob extends Logger {
     import scala.sys.process._
     val login = javarepo.baseRepo.repoInfo.get.login
     val repoName = javarepo.baseRepo.repoInfo.get.name
-
     val srchRefFileName = s"/tmp/kodebeagle-srch-$login~$repoName"
     val srcFileName = s"/tmp/kodebeagle-src-$login~$repoName"
     val metaFileName = s"/tmp/kodebeagle-meta-$login~$repoName"
     val typesInfoFileName = s"/tmp/kodebeagle-typesInfo-$login~$repoName"
-
+    val deleteIndicesFileName = s"/tmp/kodebeagle-deleteIndices-$login~$repoName"
     val srchrefWriter = new PrintWriter(new File(srchRefFileName))
     val srcWriter = new PrintWriter(new File(srcFileName))
     val metaWriter = new PrintWriter(new File(metaFileName))
     val typesInfoWriter = new PrintWriter(new File(typesInfoFileName))
-
-
+    val deleteIndicesWriter = new PrintWriter(new File(deleteIndicesFileName))
     try {
       if (javarepo.files.isEmpty) {
         log.info(s"Repo $login/$repoName does not seem to contain anything java.")
@@ -146,27 +144,29 @@ object RepoAnalyzerJob extends Logger {
         val sourceEntry = toIndexTypeJson("java", "sourcefile", SourceFile(file.repoId,
           file.repoFileLocation, file.fileContent), Option(file.repoFileLocation))
         val typesInfoEntry = toJson(file.typesInFile)
-
         srchrefWriter.write(srchRefEntry + "\n")
         metaWriter.write(metaDataEntry + "\n")
         srcWriter.write(sourceEntry + "\n")
         typesInfoWriter.write(typesInfoEntry + "\n")
+        if(RepoIndexStatus.EXISTING == javarepo.baseRepo.repoIndexStatus){
+          val deleteEntry = toDeleteIndexJson(file.repoFileLocation)
+          deleteIndicesWriter.write(deleteEntry + "\n")
+        }
       })
-    } finally {
-      Seq(srchrefWriter, srcWriter, metaWriter, typesInfoWriter).foreach(_.close())
+    }finally {
+      Seq(srchrefWriter, srcWriter, metaWriter,
+        deleteIndicesWriter,typesInfoWriter).foreach(_.close())
     }
-
     val moveIndex: (String, String) => Unit = moveFromLocal(login, repoName, fs)
-
     moveIndex(srcFileName, "sources")
     moveIndex(srchRefFileName, "tokens")
     moveIndex(metaFileName, "meta")
     moveIndex(typesInfoFileName, "typesinfo")
-
+    moveIndex(deleteIndicesFileName, "deleteIndices")
     val repoCleanCmd = s"rm -rf /tmp/kodebeagle/$login/$repoName"
     log.info(s"Executing command: $repoCleanCmd")
     repoCleanCmd.!!
-    s"rm -f $srcFileName $srchRefFileName $metaFileName".!!
+    s"rm -f $srcFileName $srchRefFileName $metaFileName $deleteIndicesFileName".!!
   }
 
   private def moveFromLocal(login: String, repoName: String, fs: FileSystem)

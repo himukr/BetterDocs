@@ -22,6 +22,7 @@ import java.nio.file.{Path, Paths}
 
 import com.kodebeagle.logging.Logger
 import com.kodebeagle.model.GithubRepo.GithubRepoInfo
+import com.kodebeagle.model.RepoIndexStatus.RepoIndexStatus
 import org.apache.hadoop.conf.Configuration
 import org.eclipse.jgit.lib.{ObjectId, ObjectLoader, Ref, Repository}
 import org.eclipse.jgit.revwalk.{RevCommit, RevTree, RevWalk}
@@ -51,18 +52,27 @@ class GithubRepo protected()
   private var _languages: Option[Set[String]] = None
   protected var _repoGitFiles: Option[List[String]] = None
   var repoInfo: Option[GithubRepoInfo] = None
+  var repoIndexStatus: RepoIndexStatus = RepoIndexStatus.NEW
 
-
-  // init()
-
-  private def init(configuration: Configuration, githubRepoInfo: GithubRepoInfo): GithubRepo = {
+  private def init(configuration: Configuration,
+                   githubRepoInfo: GithubRepoInfo): Option[GithubRepo] = {
     val repoUpdateHelper = new GithubRepoUpdateHelper(configuration, githubRepoInfo.fullName)
-    if (repoUpdateHelper.shouldUpdate()) {
+    var createRepoIndex=false
+    if (repoUpdateHelper.shouldCreate()) {
+      repoUpdateHelper.create()
+      createRepoIndex=true
+    }else if (repoUpdateHelper.shouldUpdate()){
+      repoIndexStatus=RepoIndexStatus.EXISTING
       repoUpdateHelper.update()
+      createRepoIndex=true
     }
-    _repoGitFiles = Option(repoUpdateHelper.downloadLocalFromDfs())
-    repoInfo = Option(githubRepoInfo)
-    this
+    if(createRepoIndex) {
+      _repoGitFiles = Option(repoUpdateHelper.downloadLocalFromDfs())
+      repoInfo = Option(githubRepoInfo)
+      Some(this)
+    }else{
+      None
+    }
   }
 
   override def files: List[GithubFileInfo] = {
@@ -163,9 +173,7 @@ class GithubRepo protected()
         List.empty
       }
     }
-
   }
-
 }
 
 object GithubRepo {
@@ -176,7 +184,7 @@ object GithubRepo {
                             defaultBranch: String, stargazersCount: Long)
 
   def apply(configuration: Configuration, githubRepoInfo: GithubRepoInfo): Option[GithubRepo] = {
-    Try(new GithubRepo().init(configuration, githubRepoInfo)).toOption
+    new GithubRepo().init(configuration, githubRepoInfo)
   }
 
 }
