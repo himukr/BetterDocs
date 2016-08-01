@@ -20,46 +20,16 @@
 # DISCLAIMER: There are no defensive checks please use it carefully.
 
 echo "Clearing kodebeagle related indices from elasticsearch."
-curl -XDELETE 'http://localhost:9201/kodebeagle/'
-curl -XDELETE 'http://localhost:9201/sourcefile/'
-curl -XDELETE 'http://localhost:9201/repository/'
-curl -XDELETE 'http://localhost:9201/importsmethods/'
-curl -XDELETE 'http://localhost:9201/statistics/'
+curl -XDELETE 'http://192.168.2.67:9200/sourcefile/'
+curl -XDELETE 'http://192.168.2.67:9200/repository/'
+curl -XDELETE 'http://192.168.2.67:9200/repotopic/'
+curl -XDELETE 'http://192.168.2.67:9200/filemetadata/'
+curl -XDELETE 'http://192.168.2.67:9200/typereferences/'
 
-# create a kodebeagle index
-curl -XPUT 'http://localhost:9201/kodebeagle/'
 
 # Updating mappings and types for kodebeagle index.
 
-curl -XPUT 'localhost:9201/kodebeagle/custom/_mapping' -d '
-{
-    "custom" : {
-        "properties" : {
-                "file" : { "type" : "string", "index" : "no" },
-                "tokens": {
-                        "type": "nested",
-                        "include_in_parent": true,
-                        "properties": {
-                            "importName": {
-                                "type": "string",
-                                "index" : "not_analyzed"
-                            },
-                            "importExactName": {
-                                "type": "string",
-                                "index" : "no"
-                            },
-                            "lineNumbers": {
-                                "type": "long",
-                                "index" : "no"
-                            }
-                        }
-                    },
-                "score" : { "type" : "integer", "index" : "not_analyzed" }
-        }
-    }
-}'
-
-curl -XPUT 'localhost:9201/sourcefile' -d '{
+curl -XPUT '192.168.2.67:9200/sourcefile' -d '{
  "mappings": {
     "typesourcefile" : {
         "properties" : {
@@ -71,7 +41,7 @@ curl -XPUT 'localhost:9201/sourcefile' -d '{
     }
 }'
 
-curl -XPUT 'localhost:9201/repotopic' -d '{
+curl -XPUT '192.168.2.67:9200/repotopic' -d '{
     "mappings" : {
       "typerepotopic" : {
         "properties" : {
@@ -112,84 +82,204 @@ curl -XPUT 'localhost:9201/repotopic' -d '{
     }
   }'
 
+ curl -XPUT '192.168.2.67:9200/filemetadata' -d '{
+ "mappings": {
+   "typefilemetadata": {
+     "properties": {
+       "superTypes": {
+        "type": "nested",
+         "properties": {
+            "typeName":{
+              "index": "not_analyzed",
+              "type": "string"
+            },
+            "superTypes": {
+              "index": "not_analyzed",
+               "type": "string"
+            }
+         }
+       },
+       "repoId": {
+         "index": "no",
+         "type": "long"
+       },
+       "fileName": {
+         "index": "not_analyzed",
+         "type": "string"
+       },
+       "methodTypeLocation": {
+         "properties": {
+           "argTypes": {
+             "index": "no",
+             "type": "string"
+           },
+           "loc": {
+             "index": "no",
+             "type": "string"
+           },
+           "method": {
+             "index": "no",
+             "type": "string"
+           },
+           "id": {
+             "index": "no",
+             "type": "long"
+           }
+         }
+       },
+       "methodDefinitionList": {
+         "properties": {
+           "argTypes": {
+             "index": "no",
+             "type": "string"
+           },
+           "loc": {
+             "index": "no",
+             "type": "string"
+           },
+           "method": {
+             "index": "no",
+             "type": "string"
+           }
+         }
+       },
+       "typeLocationList": {
+         "properties": {
+           "loc": {
+             "index": "no",
+             "type": "string"
+           },
+           "id": {
+             "index": "no",
+             "type": "long"
+           }
+         }
+       },
+       "internalRefList": {
+         "properties": {
+           "childLine": {
+             "index": "no",
+             "type": "string"
+           },
+           "parentLine": {
+             "index": "no",
+             "type": "string"
+           }
+         }
+       },
+       "externalRefList": {
+         "properties": {
+           "fqt": {
+             "index": "no",
+             "type": "string"
+           },
+           "id": {
+             "index": "no",
+             "type": "long"
+           }
+         }
+       },
+       "fileTypes": {
+         "properties": {
+           "loc": {
+             "index": "no",
+             "type": "string"
+           },
+           "underlying": {
+             "properties": {
+               "loc": {
+                 "type": "string"
+               },
+               "fileType": {
+                 "index": "not_analyzed",
+                 "type": "string"
+               }
+             }
+           },
+           "fileType": {
+             "index": "not_analyzed",
+             "type": "string"
+           }
+         }
+       }
+     }
+   }
+ }
+}'
 
-curl -XPUT 'http://localhost:9201/importsmethods/' -d '{
-    "mappings": {
-        "typeimportsmethods": {
-            "properties": {
-                "file": {
-                    "type": "string",
-                    "index": "no"
-                },
-                "tokens": {
-                    "type": "nested",
-                    "include_in_parent": true,
-                    "properties": {
-                        "importName": {
-                            "type": "string",
-                            "index": "not_analyzed"
-                        },
-                        "importExactName": {
-                            "type": "string",
-                            "index": "no"
-                        },
-                        "lineNumbers": {
-                            "properties": {
-                                "endColumn": {
-                                    "type": "long"
-                                },
-                                "lineNumber": {
-                                    "type": "long"
-                                },
-                                "startColumn": {
-                                    "type": "long"
-                                }
+curl -XPUT '192.168.2.67:9200/typereferences' -d '{
+"mappings": {
+
+    "javaexternal": {
+        "properties": {
+            "repoId": {
+                "type": "long"
+            },
+            "score": {
+                "type": "integer"
+            },
+            "types": {
+                "type": "nested",
+                "include_in_parent": true,
+                "properties": {
+                    "typeName": {
+                        "index": "not_analyzed",
+                        "type": "string"
+                    },
+                    "lines": {
+                        "properties": {
+                            "endColumn": {
+                                "type": "long"
+                            },
+                            "startColumn": {
+                                "type": "long"
+                            },
+                            "lineNumber": {
+                                "type": "long"
                             }
-                        },
-                        "methodAndLineNumbers": {
-                            "type": "nested",
-                            "include_in_parent": true,
-                            "properties": {
-                                "lineNumbers": {
-                                    "properties": {
-                                        "endColumn": {
-                                            "type": "long"
-                                        },
-                                        "lineNumber": {
-                                            "type": "long"
-                                        },
-                                        "startColumn": {
-                                            "type": "long"
-                                        }
+                        }
+                    },
+                    "properties": {
+                        "type": "nested",
+                        "include_in_parent": true,
+                        "properties": {
+                            "propertyName": {
+                                "index": "not_analyzed",
+                                "type": "string"
+                            },
+                            "lines": {
+                                "properties": {
+                                    "endColumn": {
+                                        "type": "long"
+                                    },
+                                    "startColumn": {
+                                        "type": "long"
+                                    },
+                                    "lineNumber": {
+                                        "type": "long"
                                     }
-                                },
-                                "methodName": {
-                                    "type": "string",
-                                    "index": "not_analyzed"
                                 }
                             }
                         }
                     }
-                },
-                "repoId": {
-                    "type": "long"
-                },
-                "language": {
-                    "type": "string",
-                    "index": "not_analyzed"
-                },
-                "score": {
-                    "type": "integer",
-                    "index": "not_analyzed"
                 }
+            },
+            "file": {
+                "index": "no",
+                "type": "string"
+            },
+            "language": {
+                "index": "not_analyzed",
+                "type": "string"
             }
         }
     }
+}
 }'
 
-
-for f in `find $1 -name 'part*'`
+for file in `find $1 -type f`
 do
-    echo "uploading $f to elasticsearch."
-    curl -s -XPOST 'localhost:9201/_bulk' --data-binary '@'$f >/dev/null
+    echo "uploading $file to elasticsearch."
+    curl -s -XPOST '192.168.2.67:9200/_bulk' --data-binary '@'$file >/dev/null
 done
+
