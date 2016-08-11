@@ -58,6 +58,9 @@ object KodeBeagleConfig extends ConfigReader {
     get("kodebeagle.httpClient.max-retries").get.toInt
 
   private[kodebeagle] val repoIndicesHdfsPath: String = get("kodebeagle.hdfs.indices.path").get
+  private[kodebeagle] val repoIndicesBackupPath: String =
+    get("kodebeagle.hdfs.indices.backup.path").get
+
   val repoMetaDataHdfsPath: String = get("kodebeagle.hdfs.repo.meta.path").get
 
   def nextToken(arr: Array[String] = githubTokens): String = {

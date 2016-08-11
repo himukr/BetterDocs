@@ -24,6 +24,7 @@ import com.kodebeagle.logging.Logger
 import com.kodebeagle.model.GithubRepo.GithubRepoInfo
 import com.kodebeagle.model.RepoIndexStatus.RepoIndexStatus
 import org.apache.hadoop.conf.Configuration
+import org.eclipse.jgit.diff.DiffEntry
 import org.eclipse.jgit.lib.{ObjectId, ObjectLoader, Ref, Repository}
 import org.eclipse.jgit.revwalk.{RevCommit, RevTree, RevWalk}
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
@@ -52,7 +53,10 @@ class GithubRepo protected()
   private var _languages: Option[Set[String]] = None
   protected var _repoGitFiles: Option[List[String]] = None
   var repoInfo: Option[GithubRepoInfo] = None
+  var gitHubDeletedFiles: Option[List[GithubFileInfo]]=None
+
   var repoIndexStatus: RepoIndexStatus = RepoIndexStatus.NEW
+  var repoDiffMap: Option[Map[DiffEntry.ChangeType,List[DiffEntry]]] =None
 
   private def init(configuration: Configuration,
                    githubRepoInfo: GithubRepoInfo): Option[GithubRepo] = {
@@ -63,6 +67,7 @@ class GithubRepo protected()
       createRepoIndex=true
     }else if (repoUpdateHelper.shouldUpdate()){
       repoIndexStatus=RepoIndexStatus.EXISTING
+      repoDiffMap=repoUpdateHelper.diffsInUpdatedGitRepo
       repoUpdateHelper.update()
       createRepoIndex=true
     }
@@ -138,28 +143,7 @@ class GithubRepo protected()
 
 
     val fileListOpt = Try {
-      val head: Ref = gitRepo.getRef("HEAD")
-
-      // a RevWalk allows to walk over commits based on some filtering that is
-      // defined
-      val walk: RevWalk = new RevWalk(gitRepo)
-
-      val commit: RevCommit = walk.parseCommit(head.getObjectId)
-      val tree: RevTree = commit.getTree
-
-      // Now use a TreeWalk to iterate over all files in the Tree recursively
-      // We can set Filters to narrow down the results if needed
-      val treeWalk: TreeWalk = new TreeWalk(gitRepo)
-      treeWalk.addTree(tree)
-      treeWalk.setRecursive(true)
-      while (treeWalk.next) {
-        val githubFileInfo = new GithubFileInfo(treeWalk.getPathString,
-          treeWalk.getObjectId(0), gitRepo,
-          repoInfo.get)
-        gitHubFilesInfo.append(githubFileInfo)
-      }
-
-      gitHubFilesInfo.toList
+      performGitTreeWalk(gitRepo, gitHubFilesInfo)
     }
 
     fileListOpt match {
@@ -173,6 +157,73 @@ class GithubRepo protected()
         List.empty
       }
     }
+  }
+
+  private def performGitTreeWalk(gitRepo: Repository,
+                         gitHubFilesInfo: ArrayBuffer[GithubFileInfo]): List[GithubFileInfo] = {
+    val head: Ref = gitRepo.getRef("HEAD")
+
+    // a RevWalk allows to walk over commits based on some filtering that is
+    // defined
+    val walk: RevWalk = new RevWalk(gitRepo)
+
+    val commit: RevCommit = walk.parseCommit(head.getObjectId)
+    val tree: RevTree = commit.getTree
+
+    // Now use a TreeWalk to iterate over all files in the Tree recursively
+    // We can set Filters to narrow down the results if needed
+    val treeWalk: TreeWalk = new TreeWalk(gitRepo)
+    treeWalk.addTree(tree)
+    treeWalk.setRecursive(true)
+    if(repoIndexStatus==RepoIndexStatus.NEW) {
+      extractAllFiles(gitRepo, gitHubFilesInfo, treeWalk)
+    }else{
+      extractChangedFiles(gitRepo, gitHubFilesInfo, treeWalk)
+    }
+
+    gitHubFilesInfo.toList
+  }
+
+  def extractAllFiles(gitRepo: Repository, gitHubFilesInfo: ArrayBuffer[GithubFileInfo],
+                      treeWalk: TreeWalk): Unit = {
+    while (treeWalk.next) {
+      val githubFileInfo = new GithubFileInfo(treeWalk.getPathString,
+        treeWalk.getObjectId(0), gitRepo,
+        repoInfo.get)
+      gitHubFilesInfo.append(githubFileInfo)
+    }
+  }
+
+  def extractChangedFiles(gitRepo: Repository, gitHubFilesInfo: ArrayBuffer[GithubFileInfo],
+                          treeWalk: TreeWalk): Unit = {
+    val gitHubDeletedFilesInfo: ArrayBuffer[GithubFileInfo] =
+      mutable.ArrayBuffer[GithubFileInfo]()
+    val diffMap = repoDiffMap.get
+
+    val deletedFiles = ((diffMap.get(DiffEntry.ChangeType.DELETE) ++
+      diffMap.get(DiffEntry.ChangeType.RENAME)))
+      .flatten.map(_.getOldPath).toList
+
+    val addedFiles = (diffMap.get(DiffEntry.ChangeType.ADD) ++
+      diffMap.get(DiffEntry.ChangeType.COPY) ++ diffMap.get(DiffEntry.ChangeType.MODIFY) ++
+      diffMap.get(DiffEntry.ChangeType.RENAME)).flatten.map(_.getNewPath).toList
+
+    while (treeWalk.next) {
+      val filePathString = treeWalk.getPathString
+      if (addedFiles.contains(filePathString)) {
+        val githubFileInfo = new GithubFileInfo(treeWalk.getPathString,
+          treeWalk.getObjectId(0), gitRepo,
+          repoInfo.get)
+        gitHubFilesInfo.append(githubFileInfo)
+      }
+      if (deletedFiles.contains(filePathString)){
+        val githubFileInfo = new GithubFileInfo(treeWalk.getPathString,
+          treeWalk.getObjectId(0), gitRepo,
+          repoInfo.get)
+        gitHubDeletedFilesInfo.append(githubFileInfo)
+      }
+    }
+    gitHubDeletedFiles=Option(gitHubDeletedFilesInfo.toList)
   }
 }
 

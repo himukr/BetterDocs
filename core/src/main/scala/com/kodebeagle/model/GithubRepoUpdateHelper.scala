@@ -23,6 +23,7 @@ import com.kodebeagle.logging.Logger
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.diff.DiffEntry
 import org.eclipse.jgit.lib.{ObjectId, ObjectReader, Repository}
 import org.eclipse.jgit.treewalk.CanonicalTreeParser
 
@@ -39,6 +40,7 @@ class GithubRepoUpdateHelper(val configuration: Configuration,
   // TODO: Get these from configuration?
   val remoteUrlPrefix = "https://github.com/"
   val gitDBName = "git.tar.gz"
+  var diffsInUpdatedGitRepo: Option[Map[DiffEntry.ChangeType,List[DiffEntry]]]=None
 
   def fs: FileSystem = FileSystem.get(configuration)
 
@@ -87,6 +89,7 @@ class GithubRepoUpdateHelper(val configuration: Configuration,
     * performs the git fetch action on git repo.
     *
     * This method is kept separate so that it can be mocked in Unit test cases
+    *
     * @param git
     */
   protected def performGitFetch(git: Git): Unit = {
@@ -97,7 +100,13 @@ class GithubRepoUpdateHelper(val configuration: Configuration,
     git.merge().include(repo.getRef(s"refs/remotes/origin/${repo.getBranch}")).call()
   }
 
-  def gitDiffExist(): Boolean ={
+  private def addDiff(diffs: List[DiffEntry]) = {
+    val diffMap=diffs.groupBy(_.getChangeType)
+    diffsInUpdatedGitRepo=Option(diffMap)
+  }
+
+  def gitDiffExist(): Boolean = {
+    import scala.collection.JavaConversions._
     val repoPath = downloadLocalFromDfs()(0)
 
     val git = Git.open(new File(s"$repoPath/.git"))
@@ -110,9 +119,10 @@ class GithubRepoUpdateHelper(val configuration: Configuration,
     oldTreeIter.reset(reader, head)
     val newTreeIter: CanonicalTreeParser = new CanonicalTreeParser
     newTreeIter.reset(reader, fetchHead)
-    val diffs=git.diff.setNewTree(newTreeIter).setOldTree(oldTreeIter).call()
-    if(diffs.size()>0) {
-      performGitMerge(repo,git)
+    val diffs = git.diff.setNewTree(newTreeIter).setOldTree(oldTreeIter).call()
+    if (diffs.size() > 0) {
+      performGitMerge(repo, git)
+      addDiff(diffs.toList)
     }
     log.info(s"No of changes in $repoPath : ${diffs.size}")
     diffs.size > 0
